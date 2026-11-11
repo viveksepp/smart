@@ -1,0 +1,1264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart Campus Integrated Management System with Authentication & RBAC</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- React, ReactDOM, Babel for single-file browser runtime -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Lucide Icons Global Library -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <style>
+    /* Custom scrollbar styling */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-fade-in {
+      animation: fadeIn 0.25s ease-out forwards;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased font-sans select-none">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useMemo, useEffect } = React;
+
+    // --- Lucide Icon Wrapper Component ---
+    const Icon = ({ name, className = "w-4 h-4", ...props }) => {
+      const [svgContent, setSvgContent] = useState("");
+
+      useEffect(() => {
+        if (window.lucide && window.lucide.icons && window.lucide.icons[name]) {
+          const iconElement = window.lucide.createElement(window.lucide.icons[name]);
+          setSvgContent(iconElement.outerHTML);
+        }
+      }, [name]);
+
+      if (!svgContent) {
+        return <span className={`inline-block ${className}`} {...props}></span>;
+      }
+
+      return (
+        <span 
+          className={`inline-flex items-center justify-center ${className}`}
+          dangerouslySetInnerHTML={{ __html: svgContent }}
+          {...props}
+        />
+      );
+    };
+
+    // --- DEMO ACCOUNTS & RBAC PERMISSIONS ---
+    const DEMO_ACCOUNTS = [
+      {
+        email: 'admin@campus.edu',
+        password: 'admin123password',
+        name: 'Dr. Sarah Connor',
+        role: 'Admin',
+        department: 'Central Administration',
+        avatarColor: 'bg-indigo-600',
+        badgeColor: 'bg-indigo-100 text-indigo-700 border-indigo-300'
+      },
+      {
+        email: 'faculty@campus.edu',
+        password: 'faculty123password',
+        name: 'Dr. Robert Smith',
+        role: 'Faculty',
+        department: 'Computer Science',
+        avatarColor: 'bg-rose-600',
+        badgeColor: 'bg-rose-100 text-rose-700 border-rose-300'
+      },
+      {
+        email: 'staff@campus.edu',
+        password: 'staff123password',
+        name: 'Michael Miller',
+        role: 'Staff',
+        department: 'Campus Operations',
+        avatarColor: 'bg-emerald-600',
+        badgeColor: 'bg-emerald-100 text-emerald-700 border-emerald-300'
+      },
+      {
+        email: 'student@campus.edu',
+        password: 'student123password',
+        name: 'Alex Johnson',
+        role: 'Student',
+        department: 'Computer Science',
+        avatarColor: 'bg-blue-600',
+        badgeColor: 'bg-blue-100 text-blue-700 border-blue-300'
+      }
+    ];
+
+    // Role-based capabilities configuration
+    const ROLE_PERMISSIONS = {
+      Admin: {
+        canAddStudent: true,
+        canDeleteStudent: true,
+        canAddFaculty: true,
+        canDeleteFaculty: true,
+        canAddCourse: true,
+        canManageResources: true,
+        canApproveBookings: true,
+        canEditActivities: true,
+        viewAllTabs: true,
+        description: 'Superuser - Full system administration & CRUD privileges'
+      },
+      Faculty: {
+        canAddStudent: false,
+        canDeleteStudent: false,
+        canAddFaculty: false,
+        canDeleteFaculty: false,
+        canAddCourse: true,
+        canManageResources: false,
+        canApproveBookings: false,
+        canEditActivities: true,
+        viewAllTabs: true,
+        description: 'Academic User - Manage courses, view students, submit resource bookings'
+      },
+      Staff: {
+        canAddStudent: false,
+        canDeleteStudent: false,
+        canAddFaculty: false,
+        canDeleteFaculty: false,
+        canAddCourse: false,
+        canManageResources: true,
+        canApproveBookings: true,
+        canEditActivities: true,
+        viewAllTabs: true,
+        description: 'Operations Staff - Manage facilities, schedule activities & approve bookings'
+      },
+      Student: {
+        canAddStudent: false,
+        canDeleteStudent: false,
+        canAddFaculty: false,
+        canDeleteFaculty: false,
+        canAddCourse: false,
+        canManageResources: false,
+        canApproveBookings: false,
+        canEditActivities: false,
+        viewAllTabs: false, // Hidden architecture/internal tabs if needed
+        description: 'Enrolled Student - View directory, course enrollments, request resource slots'
+      }
+    };
+
+    // --- INITIAL DATA SETS ---
+    const initialStudents = [
+      { id: 'STU001', name: 'Alex Johnson', email: 'alex.j@campus.edu', department: 'Computer Science', year: '3rd Year', gpa: '3.8', status: 'Active' },
+      { id: 'STU002', name: 'Sophia Chen', email: 'sophia.c@campus.edu', department: 'Electrical Eng.', year: '2nd Year', gpa: '3.9', status: 'Active' },
+      { id: 'STU003', name: 'Marcus Vance', email: 'm.vance@campus.edu', department: 'Mechanical Eng.', year: '4th Year', gpa: '3.4', status: 'On Leave' },
+      { id: 'STU004', name: 'Emily Davis', email: 'e.davis@campus.edu', department: 'Biotechnology', year: '1st Year', gpa: '3.6', status: 'Active' }
+    ];
+
+    const initialFaculty = [
+      { id: 'FAC101', name: 'Dr. Robert Smith', email: 'r.smith@campus.edu', department: 'Computer Science', designation: 'Professor', specialization: 'AI & Data Structures' },
+      { id: 'FAC102', name: 'Prof. Elena Rostova', email: 'e.rostova@campus.edu', department: 'Electrical Eng.', designation: 'Associate Professor', specialization: 'Embedded Systems' },
+      { id: 'FAC103', name: 'Dr. Michael Chang', email: 'm.chang@campus.edu', department: 'Biotechnology', designation: 'Assistant Professor', specialization: 'Genomics' }
+    ];
+
+    const initialCourses = [
+      { id: 'CS301', title: 'Data Structures & Algorithms', faculty: 'Dr. Robert Smith', credits: 4, enrolled: 45, status: 'Active', assignments: 5 },
+      { id: 'EE204', title: 'Microcontrollers & IoT', faculty: 'Prof. Elena Rostova', credits: 3, enrolled: 38, status: 'Active', assignments: 3 },
+      { id: 'BIO102', title: 'Intro to Computational Biology', faculty: 'Dr. Michael Chang', credits: 4, enrolled: 29, status: 'Upcoming', assignments: 2 }
+    ];
+
+    const initialResources = [
+      { id: 'RES-01', name: 'Main Auditorium (Room 101)', category: 'Classrooms', capacity: 250, status: 'Available', specs: 'Projector, Dolby Audio' },
+      { id: 'RES-02', name: 'Advanced Robotics Lab', category: 'Laboratories', capacity: 30, status: 'Occupied', specs: '3D Printers, Robotic Arms' },
+      { id: 'RES-03', name: 'High-Performance GPU Cluster', category: 'Equipment', capacity: 8, status: 'Available', specs: '4x NVIDIA A100 Nodes' },
+      { id: 'RES-04', name: 'Physics Optics Lab 2B', category: 'Laboratories', capacity: 25, status: 'Maintenance', specs: 'Laser Test Benches' }
+    ];
+
+    const initialActivities = [
+      { id: 'ACT-01', name: 'Annual Hackathon 2026', date: '2026-11-15', time: '09:00 AM', venue: 'Main Auditorium', organizer: 'CS Club', status: 'Confirmed' },
+      { id: 'ACT-02', name: 'Guest Lecture: Quantum Computing', date: '2026-11-18', time: '02:00 PM', venue: 'Hall B', organizer: 'Physics Dept', status: 'Upcoming' },
+      { id: 'ACT-03', name: 'Inter-Department Robotics Cup', date: '2026-11-22', time: '10:00 AM', venue: 'Robotics Lab', organizer: 'Robotics Club', status: 'Planning' }
+    ];
+
+    function App() {
+      // Authenticated User & Session State
+      const [currentUser, setCurrentUser] = useState(null); // Null = Logged Out
+      const [loginEmail, setLoginEmail] = useState('');
+      const [loginPassword, setLoginPassword] = useState('');
+      const [authError, setAuthError] = useState('');
+
+      // Navigation Tab State
+      const [activeTab, setActiveTab] = useState('dashboard');
+      
+      // Dynamic Data Collection States
+      const [students, setStudents] = useState(initialStudents);
+      const [faculty, setFaculty] = useState(initialFaculty);
+      const [courses, setCourses] = useState(initialCourses);
+      const [resources, setResources] = useState(initialResources);
+      const [activities, setActivities] = useState(initialActivities);
+
+      // Search & Modal States
+      const [searchQuery, setSearchQuery] = useState('');
+      const [modalType, setModalType] = useState(null); // 'addStudent', 'addFaculty', 'addCourse'
+      
+      // Booking System State
+      const [bookingDetails, setBookingDetails] = useState({ resourceId: '', user: '', date: '', timeSlot: '' });
+      const [bookingStatusMsg, setBookingStatusMsg] = useState(null);
+
+      // Modal Form Models
+      const [newStudent, setNewStudent] = useState({ name: '', email: '', department: 'Computer Science', year: '1st Year', gpa: '3.5', status: 'Active' });
+      const [newFaculty, setNewFaculty] = useState({ name: '', email: '', department: 'Computer Science', designation: 'Assistant Professor', specialization: '' });
+      const [newCourse, setNewCourse] = useState({ id: '', title: '', faculty: 'Dr. Robert Smith', credits: 3, enrolled: 0, status: 'Active', assignments: 0 });
+
+      // Permissions derived from current logged in user
+      const permissions = useMemo(() => {
+        if (!currentUser) return null;
+        return ROLE_PERMISSIONS[currentUser.role] || ROLE_PERMISSIONS['Student'];
+      }, [currentUser]);
+
+      // Login Handler
+      const handleLogin = (e) => {
+        e?.preventDefault();
+        setAuthError('');
+        const matchedAccount = DEMO_ACCOUNTS.find(
+          a => a.email.toLowerCase() === loginEmail.trim().toLowerCase()
+        );
+
+        if (!matchedAccount) {
+          setAuthError('Account not found. Please try one of the quick login credentials.');
+          return;
+        }
+
+        if (loginPassword && loginPassword.length < 4) {
+          setAuthError('Invalid password credentials.');
+          return;
+        }
+
+        // Auto prepopulate requester name in booking tool
+        setBookingDetails(prev => ({ ...prev, user: matchedAccount.name }));
+        setCurrentUser(matchedAccount);
+        setActiveTab('dashboard');
+        setLoginEmail('');
+        setLoginPassword('');
+      };
+
+      // Direct Quick Login Trigger
+      const handleQuickLogin = (demoAcc) => {
+        setAuthError('');
+        setBookingDetails(prev => ({ ...prev, user: demoAcc.name }));
+        setCurrentUser(demoAcc);
+        setActiveTab('dashboard');
+      };
+
+      // Logout Handler
+      const handleLogout = () => {
+        setCurrentUser(null);
+        setActiveTab('dashboard');
+        setSearchQuery('');
+      };
+
+      // CRUD Event Handlers
+      const handleAddStudent = (e) => {
+        e.preventDefault();
+        if (!permissions?.canAddStudent) return;
+        const created = { ...newStudent, id: `STU00${students.length + 1}` };
+        setStudents([...students, created]);
+        setModalType(null);
+        setNewStudent({ name: '', email: '', department: 'Computer Science', year: '1st Year', gpa: '3.5', status: 'Active' });
+      };
+
+      const handleDeleteStudent = (id) => {
+        if (!permissions?.canDeleteStudent) return;
+        setStudents(students.filter(s => s.id !== id));
+      };
+
+      const handleAddFaculty = (e) => {
+        e.preventDefault();
+        if (!permissions?.canAddFaculty) return;
+        const created = { ...newFaculty, id: `FAC10${faculty.length + 1}` };
+        setFaculty([...faculty, created]);
+        setModalType(null);
+        setNewFaculty({ name: '', email: '', department: 'Computer Science', designation: 'Assistant Professor', specialization: '' });
+      };
+
+      const handleDeleteFaculty = (id) => {
+        if (!permissions?.canDeleteFaculty) return;
+        setFaculty(faculty.filter(f => f.id !== id));
+      };
+
+      const handleAddCourse = (e) => {
+        e.preventDefault();
+        if (!permissions?.canAddCourse) return;
+        setCourses([...courses, newCourse]);
+        setModalType(null);
+        setNewCourse({ id: '', title: '', faculty: 'Dr. Robert Smith', credits: 3, enrolled: 0, status: 'Active', assignments: 0 });
+      };
+
+      // Booking Verification Logic
+      const handleSimulateBooking = (e) => {
+        e.preventDefault();
+        const targetRes = resources.find(r => r.id === bookingDetails.resourceId);
+        if (!targetRes) return;
+
+        if (targetRes.status === 'Occupied' || targetRes.status === 'Maintenance') {
+          setBookingStatusMsg({ 
+            type: 'error', 
+            text: `Booking Declined: ${targetRes.name} is currently marked as ${targetRes.status}. System conflict logic prevented collision.` 
+          });
+        } else {
+          setResources(resources.map(r => r.id === targetRes.id ? { ...r, status: 'Occupied' } : r));
+          setBookingStatusMsg({ 
+            type: 'success', 
+            text: `Reservation Confirmed! Slot booked for ${bookingDetails.user || currentUser.name} (${currentUser.role}).` 
+          });
+          setTimeout(() => {
+            setBookingStatusMsg(null);
+          }, 3000);
+        }
+      };
+
+      // Filtered data based on search bar
+      const filteredStudents = useMemo(() => {
+        return students.filter(s => 
+          s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          s.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          s.department.toLowerCase().includes(searchQuery.toLowerCase())
+        );
+      }, [students, searchQuery]);
+
+      const filteredFaculty = useMemo(() => {
+        return faculty.filter(f => 
+          f.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          f.department.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          f.specialization.toLowerCase().includes(searchQuery.toLowerCase())
+        );
+      }, [faculty, searchQuery]);
+
+      // --- LOGIN VIEW (RENDERED WHEN NOT AUTHENTICATED) ---
+      if (!currentUser) {
+        return (
+          <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4 relative overflow-hidden">
+            {/* Background Decorative Accents */}
+            <div className="absolute -top-40 -left-40 w-96 h-96 bg-indigo-600/20 rounded-full blur-3xl pointer-events-none"></div>
+            <div className="absolute -bottom-40 -right-40 w-96 h-96 bg-blue-600/20 rounded-full blur-3xl pointer-events-none"></div>
+
+            <div className="w-full max-w-4xl bg-slate-800 border border-slate-700/80 rounded-2xl shadow-2xl overflow-hidden grid grid-cols-1 md:grid-cols-12 z-10 animate-fade-in">
+              
+              {/* Left Panel - Branding & Architecture Info */}
+              <div className="md:col-span-5 bg-gradient-to-br from-indigo-900 via-slate-900 to-indigo-950 p-8 text-white flex flex-col justify-between border-b md:border-b-0 md:border-r border-slate-700/80">
+                <div>
+                  <div className="flex items-center space-x-3 mb-6">
+                    <div className="p-3 bg-indigo-600 rounded-xl text-white shadow-lg shadow-indigo-600/40">
+                      <Icon name="layers" className="w-7 h-7" />
+                    </div>
+                    <div>
+                      <h1 className="text-xl font-bold tracking-tight text-white">SmartCampus</h1>
+                      <p className="text-xs text-indigo-300 font-medium">Authentication Gateway</p>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-slate-300 leading-relaxed mb-6">
+                    Enterprise Java-backed Integrated Campus Platform featuring modular Role-Based Access Control (RBAC), multi-tier security, and real-time resource validation engine.
+                  </p>
+
+                  <div className="space-y-2.5">
+                    <div className="flex items-center space-x-2.5 text-xs text-slate-300">
+                      <Icon name="shield-check" className="w-4 h-4 text-emerald-400" />
+                      <span>Role-based UI feature toggle engine</span>
+                    </div>
+                    <div className="flex items-center space-x-2.5 text-xs text-slate-300">
+                      <Icon name="lock" className="w-4 h-4 text-indigo-400" />
+                      <span>Encrypted credentials authentication</span>
+                    </div>
+                    <div className="flex items-center space-x-2.5 text-xs text-slate-300">
+                      <Icon name="database" className="w-4 h-4 text-amber-400" />
+                      <span>Java Persistence & Collections store</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-8 pt-4 border-t border-slate-800 text-[11px] text-slate-400">
+                  Java Spring Security Spec • JDBC Session Manager
+                </div>
+              </div>
+
+              {/* Right Panel - Form & Quick Login Demo Tiers */}
+              <div className="md:col-span-7 p-8 bg-slate-800 flex flex-col justify-between space-y-6">
+                <div>
+                  <div className="mb-6">
+                    <h2 className="text-xl font-bold text-white">Account Sign In</h2>
+                    <p className="text-xs text-slate-400 mt-1">Select a demo role tier or enter registered account credentials.</p>
+                  </div>
+
+                  {authError && (
+                    <div className="mb-4 p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs font-medium flex items-center gap-2">
+                      <Icon name="alert-circle" className="w-4 h-4 text-rose-400 flex-shrink-0" />
+                      <span>{authError}</span>
+                    </div>
+                  )}
+
+                  {/* Standard Login Form */}
+                  <form onSubmit={handleLogin} className="space-y-3.5">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">Email Address</label>
+                      <div className="relative">
+                        <Icon name="mail" className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input
+                          type="email"
+                          placeholder="e.g. admin@campus.edu"
+                          value={loginEmail}
+                          onChange={(e) => setLoginEmail(e.target.value)}
+                          className="w-full pl-9 pr-4 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">Security Password</label>
+                      <div className="relative">
+                        <Icon name="key" className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input
+                          type="password"
+                          placeholder="••••••••••••"
+                          value={loginPassword}
+                          onChange={(e) => setLoginPassword(e.target.value)}
+                          className="w-full pl-9 pr-4 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs rounded-lg transition-all shadow-lg shadow-indigo-600/30"
+                    >
+                      Sign In to System Portal
+                    </button>
+                  </form>
+                </div>
+
+                {/* Quick Account Switcher (One-Click Testing) */}
+                <div className="pt-4 border-t border-slate-700/60">
+                  <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2.5">
+                    Quick Demo Role Select (One-Click)
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {DEMO_ACCOUNTS.map((acc) => (
+                      <button
+                        key={acc.role}
+                        onClick={() => handleQuickLogin(acc)}
+                        className="p-2.5 bg-slate-900/80 hover:bg-slate-700 border border-slate-700 rounded-xl text-left transition-all group flex items-center justify-between"
+                      >
+                        <div className="min-w-0">
+                          <div className="flex items-center space-x-1.5">
+                            <span className={`w-2 h-2 rounded-full ${acc.avatarColor}`}></span>
+                            <p className="text-xs font-bold text-white group-hover:text-indigo-300 transition-colors">{acc.role}</p>
+                          </div>
+                          <p className="text-[10px] text-slate-400 truncate mt-0.5">{acc.email}</p>
+                        </div>
+                        <Icon name="arrow-right" className="w-3.5 h-3.5 text-slate-500 group-hover:text-white transition-colors" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      // --- MAIN APPLICATION INTERFACE (WHEN AUTHENTICATED) ---
+      return (
+        <div className="min-h-screen bg-slate-50 text-slate-800 font-sans flex flex-col md:flex-row">
+          
+          {/* SIDEBAR NAVIGATION */}
+          <aside className="w-full md:w-72 bg-slate-900 text-slate-100 flex-shrink-0 flex flex-col justify-between border-r border-slate-800">
+            <div>
+              {/* Header Logo */}
+              <div className="p-6 border-b border-slate-800 flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2.5 bg-indigo-600 rounded-xl text-white shadow-lg shadow-indigo-600/30">
+                    <Icon name="layers" className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h1 className="font-bold text-lg leading-tight text-white">SmartCampus</h1>
+                    <p className="text-xs text-slate-400 font-medium">Management System</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Active Role Privilege Badge */}
+              <div className="p-4 mx-4 my-4 bg-slate-800/80 rounded-xl border border-slate-700/60">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Active Privilege Tier</span>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${currentUser.badgeColor}`}>
+                    {currentUser.role}
+                  </span>
+                </div>
+                <p className="text-xs text-white font-bold truncate">{currentUser.name}</p>
+                <p className="text-[11px] text-slate-400 truncate">{currentUser.department}</p>
+                <div className="mt-2.5 pt-2 border-t border-slate-700/50 text-[10px] text-slate-400 flex items-center gap-1">
+                  <Icon name="shield" className="w-3 h-3 text-emerald-400" />
+                  <span className="truncate">{permissions.description}</span>
+                </div>
+              </div>
+
+              {/* Navigation Menu */}
+              <nav className="px-3 space-y-1">
+                <div className="px-3 pb-2 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Core Modules</div>
+                
+                <button 
+                  onClick={() => setActiveTab('dashboard')} 
+                  className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
+                    activeTab === 'dashboard' ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/30' : 'text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  <Icon name="activity" className="w-4 h-4" />
+                  <span>Dashboard Overview</span>
+                </button>
+
+                <button 
+                  onClick={() => setActiveTab('students')} 
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
+                    activeTab === 'students' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' : 'text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  <div className="flex items-center space-x-3">
+                    <Icon name="users" className="w-4 h-4 text-blue-400" />
+                    <span>Student Management</span>
+                  </div>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">{students.length}</span>
+                </button>
+
+                <button 
+                  onClick={() => setActiveTab('faculty')} 
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
+                    activeTab === 'faculty' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' : 'text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  <div className="flex items-center space-x-3">
+                    <Icon name="user-check" className="w-4 h-4 text-rose-400" />
+                    <span>Faculty Management</span>
+                  </div>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">{faculty.length}</span>
+                </button>
+
+                <button 
+                  onClick={() => setActiveTab('courses')} 
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
+                    activeTab === 'courses' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  <div className="flex items-center space-x-3">
+                    <Icon name="book-open" className="w-4 h-4 text-amber-400" />
+                    <span>Course Curriculum</span>
+                  </div>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">{courses.length}</span>
+                </button>
+
+                <button 
+                  onClick={() => setActiveTab('resources')} 
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
+                    activeTab === 'resources' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  <div className="flex items-center space-x-3">
+                    <Icon name="box" className="w-4 h-4 text-emerald-400" />
+                    <span>Facilities & Resources</span>
+                  </div>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">{resources.length}</span>
+                </button>
+
+                <button 
+                  onClick={() => setActiveTab('activities')} 
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
+                    activeTab === 'activities' ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' : 'text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  <div className="flex items-center space-x-3">
+                    <Icon name="calendar" className="w-4 h-4 text-purple-400" />
+                    <span>Campus Events</span>
+                  </div>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">{activities.length}</span>
+                </button>
+
+                <button 
+                  onClick={() => setActiveTab('bookings')} 
+                  className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
+                    activeTab === 'bookings' ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' : 'text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  <Icon name="clock" className="w-4 h-4 text-orange-400" />
+                  <span>Booking Console</span>
+                </button>
+
+                {/* System Blueprint - Accessible for Admin, Faculty & Staff */}
+                {permissions.viewAllTabs && (
+                  <React.Fragment>
+                    <div className="pt-3 px-3 pb-2 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Architecture</div>
+                    <button 
+                      onClick={() => setActiveTab('architecture')} 
+                      className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
+                        activeTab === 'architecture' ? 'bg-indigo-600/30 text-indigo-300 border border-indigo-500/40' : 'text-slate-300 hover:bg-slate-800'
+                      }`}
+                    >
+                      <Icon name="code" className="w-4 h-4 text-indigo-400" />
+                      <span>Java Stack Blueprint</span>
+                    </button>
+                  </React.Fragment>
+                )}
+              </nav>
+            </div>
+
+            {/* User Profile Bar with Logout Action */}
+            <div className="p-4 border-t border-slate-800 bg-slate-900/80">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className={`w-9 h-9 rounded-full ${currentUser.avatarColor} flex items-center justify-center font-bold text-white text-sm shadow-md`}>
+                    {currentUser.name[0]}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-white truncate">{currentUser.name}</p>
+                    <p className="text-[10px] text-slate-400 truncate">{currentUser.email}</p>
+                  </div>
+                </div>
+
+                <button 
+                  onClick={handleLogout}
+                  title="Logout Session"
+                  className="p-2 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors"
+                >
+                  <Icon name="log-out" className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </aside>
+
+          {/* MAIN CONTENT WORKSPACE */}
+          <main className="flex-1 flex flex-col min-w-0 overflow-y-auto">
+            
+            {/* Top Workspace Header */}
+            <header className="bg-white border-b border-slate-200 px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 sticky top-0 z-10 shadow-sm">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900 capitalize flex items-center gap-2">
+                  {activeTab.replace('-', ' ')}
+                  <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 font-medium border border-slate-200">
+                    RBAC Protected View
+                  </span>
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">Smart Campus Integrated Controller • Logged in as <span className="font-semibold text-slate-700">{currentUser.role}</span></p>
+              </div>
+
+              <div className="flex items-center space-x-3">
+                {/* Global Search Input */}
+                <div className="relative w-full sm:w-64">
+                  <Icon name="search" className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search records, categories..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                  />
+                </div>
+
+                {/* Logout Button in Header */}
+                <button
+                  onClick={handleLogout}
+                  className="px-3 py-2 bg-slate-100 hover:bg-rose-50 hover:text-rose-600 text-slate-600 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 border border-slate-200"
+                >
+                  <Icon name="log-out" className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Logout</span>
+                </button>
+              </div>
+            </header>
+
+            {/* TAB CONTAINER */}
+            <div className="p-6 space-y-6 max-w-7xl mx-auto w-full">
+              
+              {/* TAB 1: OVERVIEW DASHBOARD */}
+              {activeTab === 'dashboard' && (
+                <div className="space-y-6 animate-fade-in">
+                  
+                  {/* Banner */}
+                  <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-2xl p-6 text-white shadow-xl relative overflow-hidden">
+                    <div className="max-w-2xl relative z-10">
+                      <div className="flex items-center space-x-2 mb-3">
+                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${currentUser.badgeColor}`}>
+                          Session Role: {currentUser.role}
+                        </span>
+                        <span className="text-xs text-slate-400">• Authenticated Session</span>
+                      </div>
+                      <h3 className="text-2xl font-bold text-white">Welcome, {currentUser.name}!</h3>
+                      <p className="text-slate-300 text-xs mt-2 leading-relaxed">
+                        You have entered the Smart Campus management workspace with <strong className="text-white">{currentUser.role} permissions</strong>. Action triggers and configuration menus across all tabs are restricted accordingly.
+                      </p>
+                      <div className="mt-4 flex flex-wrap gap-2.5">
+                        <button onClick={() => setActiveTab('bookings')} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg transition-all shadow-md flex items-center gap-1.5">
+                          <Icon name="clock" className="w-3.5 h-3.5" />
+                          <span>Resource Booking Console</span>
+                        </button>
+                        {permissions.viewAllTabs && (
+                          <button onClick={() => setActiveTab('architecture')} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5">
+                            <Icon name="code" className="w-3.5 h-3.5" />
+                            <span>Java Architecture Diagram</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Operational Summary Grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                    <div onClick={() => setActiveTab('students')} className="bg-blue-50/70 border border-blue-200 rounded-xl p-4 hover:shadow-md transition-all cursor-pointer group">
+                      <div className="flex justify-between items-start">
+                        <div className="p-2 bg-blue-500 text-white rounded-lg shadow-sm"><Icon name="users" className="w-4 h-4" /></div>
+                        <span className="text-[10px] font-semibold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">Enrolled</span>
+                      </div>
+                      <p className="text-2xl font-bold text-slate-800 mt-2">{students.length}</p>
+                      <p className="text-xs text-slate-600 font-medium">Students</p>
+                    </div>
+
+                    <div onClick={() => setActiveTab('faculty')} className="bg-rose-50/70 border border-rose-200 rounded-xl p-4 hover:shadow-md transition-all cursor-pointer group">
+                      <div className="flex justify-between items-start">
+                        <div className="p-2 bg-rose-500 text-white rounded-lg shadow-sm"><Icon name="user-check" className="w-4 h-4" /></div>
+                        <span className="text-[10px] font-semibold text-rose-700 bg-rose-100 px-2 py-0.5 rounded-full">Instructors</span>
+                      </div>
+                      <p className="text-2xl font-bold text-slate-800 mt-2">{faculty.length}</p>
+                      <p className="text-xs text-slate-600 font-medium">Faculty Members</p>
+                    </div>
+
+                    <div onClick={() => setActiveTab('courses')} className="bg-amber-50/70 border border-amber-200 rounded-xl p-4 hover:shadow-md transition-all cursor-pointer group">
+                      <div className="flex justify-between items-start">
+                        <div className="p-2 bg-amber-500 text-white rounded-lg shadow-sm"><Icon name="book-open" className="w-4 h-4" /></div>
+                        <span className="text-[10px] font-semibold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">Active</span>
+                      </div>
+                      <p className="text-2xl font-bold text-slate-800 mt-2">{courses.length}</p>
+                      <p className="text-xs text-slate-600 font-medium">Courses</p>
+                    </div>
+
+                    <div onClick={() => setActiveTab('resources')} className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-4 hover:shadow-md transition-all cursor-pointer group">
+                      <div className="flex justify-between items-start">
+                        <div className="p-2 bg-emerald-500 text-white rounded-lg shadow-sm"><Icon name="box" className="w-4 h-4" /></div>
+                        <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">Facilities</span>
+                      </div>
+                      <p className="text-2xl font-bold text-slate-800 mt-2">{resources.length}</p>
+                      <p className="text-xs text-slate-600 font-medium">Campus Resources</p>
+                    </div>
+
+                    <div onClick={() => setActiveTab('activities')} className="bg-purple-50/70 border border-purple-200 rounded-xl p-4 hover:shadow-md transition-all cursor-pointer group">
+                      <div className="flex justify-between items-start">
+                        <div className="p-2 bg-purple-500 text-white rounded-lg shadow-sm"><Icon name="calendar" className="w-4 h-4" /></div>
+                        <span className="text-[10px] font-semibold text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full">Scheduled</span>
+                      </div>
+                      <p className="text-2xl font-bold text-slate-800 mt-2">{activities.length}</p>
+                      <p className="text-xs text-slate-600 font-medium">Campus Events</p>
+                    </div>
+                  </div>
+
+                  {/* Resource Matrix & RBAC Notice */}
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm lg:col-span-2">
+                      <div className="flex justify-between items-center mb-4">
+                        <h4 className="font-bold text-slate-800 flex items-center gap-2 text-sm">
+                          <Icon name="clock" className="w-4 h-4 text-orange-500" />
+                          Facility & Equipment Realtime Availability Status
+                        </h4>
+                      </div>
+                      <div className="space-y-2.5">
+                        {resources.map((res) => (
+                          <div key={res.id} className="flex items-center justify-between p-3 rounded-lg bg-slate-50 border border-slate-100 text-xs">
+                            <div className="flex items-center space-x-3">
+                              <div className={`w-2.5 h-2.5 rounded-full ${
+                                res.status === 'Available' ? 'bg-emerald-500' : res.status === 'Occupied' ? 'bg-amber-500' : 'bg-rose-500'
+                              }`} />
+                              <div>
+                                <p className="font-bold text-slate-800">{res.name}</p>
+                                <p className="text-slate-500">{res.category} • Capacity: {res.capacity} people</p>
+                              </div>
+                            </div>
+                            <span className={`px-2.5 py-0.5 text-[10px] rounded-full font-bold ${
+                              res.status === 'Available' ? 'bg-emerald-100 text-emerald-700' : 
+                              res.status === 'Occupied' ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'
+                            }`}>
+                              {res.status}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* RBAC Privilege Matrix Overview */}
+                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                      <h4 className="font-bold text-slate-800 mb-3 flex items-center gap-2 text-sm">
+                        <Icon name="shield-check" className="w-4 h-4 text-indigo-600" />
+                        Privilege Matrix Matrix
+                      </h4>
+                      <p className="text-xs text-slate-500 mb-4">Actions enabled for <strong className="text-indigo-600">{currentUser.role}</strong> tier:</p>
+                      
+                      <div className="space-y-2 text-xs">
+                        <div className="flex items-center justify-between p-2 rounded bg-slate-50">
+                          <span className="text-slate-600">Add / Delete Students</span>
+                          <span className={`font-bold ${permissions.canAddStudent ? 'text-emerald-600' : 'text-slate-400'}`}>
+                            {permissions.canAddStudent ? '✓ Enabled' : '✕ Restricted'}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between p-2 rounded bg-slate-50">
+                          <span className="text-slate-600">Register Faculty</span>
+                          <span className={`font-bold ${permissions.canAddFaculty ? 'text-emerald-600' : 'text-slate-400'}`}>
+                            {permissions.canAddFaculty ? '✓ Enabled' : '✕ Restricted'}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between p-2 rounded bg-slate-50">
+                          <span className="text-slate-600">Create Courses</span>
+                          <span className={`font-bold ${permissions.canAddCourse ? 'text-emerald-600' : 'text-slate-400'}`}>
+                            {permissions.canAddCourse ? '✓ Enabled' : '✕ Restricted'}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between p-2 rounded bg-slate-50">
+                          <span className="text-slate-600">Approve Bookings</span>
+                          <span className={`font-bold ${permissions.canApproveBookings ? 'text-emerald-600' : 'text-slate-400'}`}>
+                            {permissions.canApproveBookings ? '✓ Enabled' : '✕ Restricted'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+              )}
+
+              {/* TAB 2: STUDENTS */}
+              {activeTab === 'students' && (
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden animate-fade-in">
+                  <div className="p-5 border-b border-slate-200 flex flex-wrap justify-between items-center gap-3">
+                    <div>
+                      <h3 className="font-bold text-slate-900 text-base">Student Directory</h3>
+                      <p className="text-xs text-slate-500">Academic records & enrolment roster</p>
+                    </div>
+
+                    {permissions.canAddStudent ? (
+                      <button 
+                        onClick={() => setModalType('addStudent')} 
+                        className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 shadow-sm"
+                      >
+                        <Icon name="plus" className="w-3.5 h-3.5" />
+                        <span>Add Student Record</span>
+                      </button>
+                    ) : (
+                      <span className="text-xs text-slate-400 italic bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200">
+                        🔒 Read-Only Mode ({currentUser.role})
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 text-slate-500 uppercase font-semibold border-b border-slate-200">
+                        <tr>
+                          <th className="px-6 py-3">ID</th>
+                          <th className="px-6 py-3">Student Name</th>
+                          <th className="px-6 py-3">Department</th>
+                          <th className="px-6 py-3">Year</th>
+                          <th className="px-6 py-3">GPA</th>
+                          <th className="px-6 py-3">Status</th>
+                          {permissions.canDeleteStudent && <th className="px-6 py-3 text-right">Actions</th>}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {filteredStudents.map(s => (
+                          <tr key={s.id} className="hover:bg-slate-50">
+                            <td className="px-6 py-3.5 font-mono font-bold text-indigo-600">{s.id}</td>
+                            <td className="px-6 py-3.5 font-semibold text-slate-900">{s.name}<span className="block text-[11px] font-normal text-slate-400">{s.email}</span></td>
+                            <td className="px-6 py-3.5 text-slate-600">{s.department}</td>
+                            <td className="px-6 py-3.5 text-slate-600">{s.year}</td>
+                            <td className="px-6 py-3.5 font-bold text-slate-800">{s.gpa}</td>
+                            <td className="px-6 py-3.5"><span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-700 rounded-full font-bold text-[10px]">{s.status}</span></td>
+                            {permissions.canDeleteStudent && (
+                              <td className="px-6 py-3.5 text-right">
+                                <button 
+                                  onClick={() => handleDeleteStudent(s.id)}
+                                  className="text-rose-500 hover:text-rose-700 p-1 rounded hover:bg-rose-50 transition-colors"
+                                  title="Delete Student"
+                                >
+                                  <Icon name="trash-2" className="w-4 h-4" />
+                                </button>
+                              </td>
+                            )}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 3: FACULTY */}
+              {activeTab === 'faculty' && (
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden animate-fade-in">
+                  <div className="p-5 border-b border-slate-200 flex flex-wrap justify-between items-center gap-3">
+                    <div>
+                      <h3 className="font-bold text-slate-900 text-base">Faculty Directory</h3>
+                      <p className="text-xs text-slate-500">Professors, instructors, and research specializations</p>
+                    </div>
+
+                    {permissions.canAddFaculty ? (
+                      <button 
+                        onClick={() => setModalType('addFaculty')} 
+                        className="px-3.5 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 shadow-sm"
+                      >
+                        <Icon name="plus" className="w-3.5 h-3.5" />
+                        <span>Register Faculty</span>
+                      </button>
+                    ) : (
+                      <span className="text-xs text-slate-400 italic bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200">
+                        🔒 Read-Only Mode ({currentUser.role})
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 text-slate-500 uppercase font-semibold border-b border-slate-200">
+                        <tr>
+                          <th className="px-6 py-3">ID</th>
+                          <th className="px-6 py-3">Faculty Name</th>
+                          <th className="px-6 py-3">Department</th>
+                          <th className="px-6 py-3">Designation</th>
+                          <th className="px-6 py-3">Specialization</th>
+                          {permissions.canDeleteFaculty && <th className="px-6 py-3 text-right">Actions</th>}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {filteredFaculty.map(f => (
+                          <tr key={f.id} className="hover:bg-slate-50">
+                            <td className="px-6 py-3.5 font-mono font-bold text-rose-600">{f.id}</td>
+                            <td className="px-6 py-3.5 font-semibold text-slate-900">{f.name}<span className="block text-[11px] font-normal text-slate-400">{f.email}</span></td>
+                            <td className="px-6 py-3.5 text-slate-600">{f.department}</td>
+                            <td className="px-6 py-3.5 font-medium text-rose-700">{f.designation}</td>
+                            <td className="px-6 py-3.5 text-slate-600">{f.specialization}</td>
+                            {permissions.canDeleteFaculty && (
+                              <td className="px-6 py-3.5 text-right">
+                                <button 
+                                  onClick={() => handleDeleteFaculty(f.id)}
+                                  className="text-rose-500 hover:text-rose-700 p-1 rounded hover:bg-rose-50 transition-colors"
+                                >
+                                  <Icon name="trash-2" className="w-4 h-4" />
+                                </button>
+                              </td>
+                            )}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 4: COURSES */}
+              {activeTab === 'courses' && (
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4 animate-fade-in">
+                  <div className="flex justify-between items-center border-b border-slate-100 pb-4">
+                    <div>
+                      <h3 className="font-bold text-slate-900 text-base">Course Curriculum Catalog</h3>
+                      <p className="text-xs text-slate-500">Active academic courses and module details</p>
+                    </div>
+
+                    {permissions.canAddCourse && (
+                      <button 
+                        onClick={() => setModalType('addCourse')} 
+                        className="px-3.5 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 shadow-sm"
+                      >
+                        <Icon name="plus" className="w-3.5 h-3.5" />
+                        <span>Add Course</span>
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {courses.map(c => (
+                      <div key={c.id} className="p-4 rounded-xl border border-slate-200 bg-slate-50/80 hover:bg-white hover:border-amber-300 transition-all shadow-sm">
+                        <div className="flex justify-between items-start mb-2">
+                          <span className="font-mono text-xs font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded">{c.id}</span>
+                          <span className="text-[11px] font-semibold text-slate-500">{c.credits} Credits</span>
+                        </div>
+                        <h4 className="font-bold text-slate-900 text-sm">{c.title}</h4>
+                        <p className="text-xs text-slate-500 mt-1">Instructor: {c.faculty}</p>
+                        <div className="mt-4 pt-3 border-t border-slate-200/80 flex justify-between text-xs text-slate-600">
+                          <span>Enrolled: <strong className="text-slate-800">{c.enrolled}</strong></span>
+                          <span className="text-indigo-600 font-bold">{c.assignments} Assignments</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 5: RESOURCES */}
+              {activeTab === 'resources' && (
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4 animate-fade-in">
+                  <div>
+                    <h3 className="font-bold text-slate-900 text-base">Facilities & Equipment Inventory</h3>
+                    <p className="text-xs text-slate-500">Smart campus physical and compute resources</p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {resources.map(r => (
+                      <div key={r.id} className="p-4 rounded-xl border border-slate-200 bg-slate-50 flex justify-between items-center">
+                        <div>
+                          <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded uppercase">{r.category}</span>
+                          <h4 className="font-bold text-slate-900 mt-1.5 text-sm">{r.name}</h4>
+                          <p className="text-xs text-slate-500 mt-0.5">Capacity: {r.capacity} • Specs: {r.specs}</p>
+                        </div>
+                        <span className={`px-3 py-1 text-xs rounded-full font-bold ${
+                          r.status === 'Available' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                        }`}>
+                          {r.status}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 6: ACTIVITIES */}
+              {activeTab === 'activities' && (
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4 animate-fade-in">
+                  <div>
+                    <h3 className="font-bold text-slate-900 text-base">Campus Activities & Events Schedule</h3>
+                    <p className="text-xs text-slate-500">Lectures, hackathons, and departmental cups</p>
+                  </div>
+
+                  <div className="space-y-3">
+                    {activities.map(a => (
+                      <div key={a.id} className="p-4 rounded-xl border border-slate-200 bg-slate-50/80 flex justify-between items-center">
+                        <div>
+                          <span className="text-[10px] font-bold text-purple-800 bg-purple-100 px-2 py-0.5 rounded">{a.organizer}</span>
+                          <h4 className="font-bold text-slate-900 mt-1 text-sm">{a.name}</h4>
+                          <p className="text-xs text-slate-500 mt-1">📅 {a.date} at {a.time} • 📍 {a.venue}</p>
+                        </div>
+                        <span className="px-3 py-1 bg-purple-100 text-purple-700 text-xs rounded-full font-bold">{a.status}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 7: BOOKING SYSTEM */}
+              {activeTab === 'bookings' && (
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 max-w-2xl mx-auto space-y-5 animate-fade-in">
+                  <div>
+                    <h3 className="font-bold text-slate-900 text-base">Resource Booking & Conflict Engine</h3>
+                    <p className="text-xs text-slate-500">Real-time slot reservation backed by Java availability verification</p>
+                  </div>
+
+                  {bookingStatusMsg && (
+                    <div className={`p-3.5 rounded-xl text-xs font-semibold flex items-center gap-2 ${
+                      bookingStatusMsg.type === 'success' ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-700' : 'bg-rose-500/10 border border-rose-500/30 text-rose-700'
+                    }`}>
+                      <Icon name={bookingStatusMsg.type === 'success' ? 'check-circle-2' : 'alert-circle'} className="w-4 h-4 flex-shrink-0" />
+                      <span>{bookingStatusMsg.text}</span>
+                    </div>
+                  )}
+
+                  <form onSubmit={handleSimulateBooking} className="space-y-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Target Facility / Equipment</label>
+                      <select 
+                        value={bookingDetails.resourceId} 
+                        onChange={(e) => setBookingDetails({...bookingDetails, resourceId: e.target.value})}
+                        required
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium"
+                      >
+                        <option value="">-- Select Resource --</option>
+                        {resources.map(r => (
+                          <option key={r.id} value={r.id}>{r.name} ({r.status})</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Requester User Name</label>
+                      <input 
+                        type="text" 
+                        value={bookingDetails.user || currentUser.name}
+                        onChange={(e) => setBookingDetails({...bookingDetails, user: e.target.value})}
+                        required
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Booking Date</label>
+                      <input 
+                        type="date"
+                        value={bookingDetails.date}
+                        onChange={(e) => setBookingDetails({...bookingDetails, date: e.target.value})}
+                        required
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs"
+                      />
+                    </div>
+
+                    <button 
+                      type="submit" 
+                      className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg text-xs transition-all shadow-md flex items-center justify-center gap-2"
+                    >
+                      <Icon name="calendar-check" className="w-4 h-4" />
+                      <span>Submit Reservation Request</span>
+                    </button>
+                  </form>
+                </div>
+              )}
+
+              {/* TAB 8: ARCHITECTURE SPEC BLUEPRINT */}
+              {activeTab === 'architecture' && permissions.viewAllTabs && (
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-6 animate-fade-in">
+                  <div>
+                    <h3 className="font-bold text-slate-900 text-base">Java Application Architecture Spec</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">Structural stack breakdown of Spring Security authentication & JDBC layer</p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="p-4 rounded-xl border border-blue-200 bg-blue-50/40">
+                      <h4 className="font-bold text-blue-900 text-xs mb-1.5 flex items-center gap-2">
+                        <Icon name="shield" className="w-4 h-4 text-blue-600" />
+                        1. Spring Security / RBAC Tier
+                      </h4>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        Evaluates user credentials, generates Session Tokens, and enforces `@PreAuthorize("hasRole('ADMIN')")` restrictions on API endpoints.
+                      </p>
+                    </div>
+
+                    <div className="p-4 rounded-xl border border-indigo-200 bg-indigo-50/40">
+                      <h4 className="font-bold text-indigo-900 text-xs mb-1.5 flex items-center gap-2">
+                        <Icon name="cpu" className="w-4 h-4 text-indigo-600" />
+                        2. Domain Business Models
+                      </h4>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        POJO entities (`User`, `Student`, `Faculty`, `ResourceBooking`) wrapped with Java Collections filter logic & concurrent stream guards.
+                      </p>
+                    </div>
+
+                    <div className="p-4 rounded-xl border border-emerald-200 bg-emerald-50/40">
+                      <h4 className="font-bold text-emerald-900 text-xs mb-1.5 flex items-center gap-2">
+                        <Icon name="database" className="w-4 h-4 text-emerald-600" />
+                        3. Database Persistence
+                      </h4>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        Relational MySQL schema driven via Spring Data JPA / JDBC repositories with foreign keys and ACID transactional integrity.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+            </div>
+          </main>
+
+          {/* MODALS FOR ADDING RECORDS */}
+          {modalType && (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4 animate-fade-in">
+                <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                  <h3 className="font-bold text-slate-900 text-sm">
+                    {modalType === 'addStudent' && 'Register New Student'}
+                    {modalType === 'addFaculty' && 'Register New Faculty Member'}
+                    {modalType === 'addCourse' && 'Create New Course Module'}
+                  </h3>
+                  <button onClick={() => setModalType(null)} className="text-slate-400 hover:text-slate-600 text-lg font-bold">✕</button>
+                </div>
+
+                {modalType === 'addStudent' && (
+                  <form onSubmit={handleAddStudent} className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Student Full Name</label>
+                      <input type="text" required value={newStudent.name} onChange={(e) => setNewStudent({...newStudent, name: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-xs" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Email Address</label>
+                      <input type="email" required value={newStudent.email} onChange={(e) => setNewStudent({...newStudent, email: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-xs" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Department</label>
+                      <select value={newStudent.department} onChange={(e) => setNewStudent({...newStudent, department: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-xs">
+                        <option>Computer Science</option>
+                        <option>Electrical Eng.</option>
+                        <option>Mechanical Eng.</option>
+                        <option>Biotechnology</option>
+                      </select>
+                    </div>
+                    <div className="flex justify-end space-x-2 pt-3">
+                      <button type="button" onClick={() => setModalType(null)} className="px-4 py-2 border rounded-lg text-xs font-semibold">Cancel</button>
+                      <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs font-semibold">Save Student Record</button>
+                    </div>
+                  </form>
+                )}
+
+                {modalType === 'addFaculty' && (
+                  <form onSubmit={handleAddFaculty} className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Faculty Name</label>
+                      <input type="text" required value={newFaculty.name} onChange={(e) => setNewFaculty({...newFaculty, name: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-xs" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Email Address</label>
+                      <input type="email" required value={newFaculty.email} onChange={(e) => setNewFaculty({...newFaculty, email: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-xs" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Specialization</label>
+                      <input type="text" required value={newFaculty.specialization} onChange={(e) => setNewFaculty({...newFaculty, specialization: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-xs" />
+                    </div>
+                    <div className="flex justify-end space-x-2 pt-3">
+                      <button type="button" onClick={() => setModalType(null)} className="px-4 py-2 border rounded-lg text-xs font-semibold">Cancel</button>
+                      <button type="submit" className="px-4 py-2 bg-rose-600 text-white rounded-lg text-xs font-semibold">Save Faculty</button>
+                    </div>
+                  </form>
+                )}
+
+                {modalType === 'addCourse' && (
+                  <form onSubmit={handleAddCourse} className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Course Code (e.g. CS401)</label>
+                      <input type="text" required value={newCourse.id} onChange={(e) => setNewCourse({...newCourse, id: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-xs" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Course Title</label>
+                      <input type="text" required value={newCourse.title} onChange={(e) => setNewCourse({...newCourse, title: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-xs" />
+                    </div>
+                    <div className="flex justify-end space-x-2 pt-3">
+                      <button type="button" onClick={() => setModalType(null)} className="px-4 py-2 border rounded-lg text-xs font-semibold">Cancel</button>
+                      <button type="submit" className="px-4 py-2 bg-amber-600 text-white rounded-lg text-xs font-semibold">Save Course</button>
+                    </div>
+                  </form>
+                )}
+              </div>
+            </div>
+          )}
+
+        </div>
+      );
+    }
+
+    ReactDOM.render(<App />, document.getElementById('root'));
+  </script>
+</body>
+</html>
